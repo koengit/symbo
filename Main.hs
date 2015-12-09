@@ -75,7 +75,7 @@ prog = M.fromList
       , (suc, ["x'"],
           Case (Var "y")
             [ (zer, [], Con false [])
-            , (suc, ["y'"], App "leq" [Var "x'", Var "y'"])
+            , (suc, ["y'"], Later $ App "leq" [Var "x'", Var "y'"])
             ])
       ]
     ))
@@ -90,7 +90,7 @@ prog = M.fromList
       , (suc, ["x'"],
           Case (Var "y")
             [ (zer, [], Con false [])
-            , (suc, ["y'"], App "eqNat" [Var "x'", Var "y'"])
+            , (suc, ["y'"], Later $ App "eqNat" [Var "x'", Var "y'"])
             ])
       ]
     ))
@@ -105,7 +105,7 @@ prog = M.fromList
       , (cns natT, ["z","zs"],
           Case (Var "ys")
             [ (nil natT, [], Con false [])
-            , (cns natT, ["w","ws"], App "&&" [App "eqNat" [Var "z", Var "w"], App "eqList" [Var "zs", Var "ws"]])
+            , (cns natT, ["w","ws"], App "&&" [App "eqNat" [Var "z", Var "w"], Later $ App "eqList" [Var "zs", Var "ws"]])
             ])
       ]
     ))
@@ -126,7 +126,7 @@ prog = M.fromList
   , ("sort", (["xs"],
       Case (Var "xs")
       [ (nil natT, [], Con (nil natT) [])
-      , (cns natT, ["y","ys"], App "insert" [Var "y", App "sort" [Var "ys"]])
+      , (cns natT, ["y","ys"], App "insert" [Var "y", Later $ App "sort" [Var "ys"]])
       ]
     ))
 
@@ -135,7 +135,7 @@ prog = M.fromList
       [ (nil natT, [], Con (cns natT) [Var "x", Con (nil natT) []])
       , (cns natT, ["y","ys"], Case (App "leq" [Var "x", Var "y"])
                                [ (true,  [], Con (cns natT) [Var "x", Var "xs"])
-                               , (false, [], Con (cns natT) [Var "y", App "insert" [Var "x", Var "ys"]])
+                               , (false, [], Con (cns natT) [Var "y", Later $ App "insert" [Var "x", Var "ys"]])
                                ])
       ]
     ))
@@ -305,21 +305,21 @@ test =
        (cons true [])
      -}
 
-     {-
-     evalInto prog M.empty
+     evalInto Prolog prog M.empty
        (M.fromList [("x",x),("y",y)])
        (len 20 (Var "x"))
        (cons true [])
-     evalInto prog M.empty
+     evalInto Prolog prog M.empty
        (M.fromList [("x",x),("y",y)])
        (App "prop1" [Var "x",Var "y"])
        (cons false [])
-     -}
      
-     evalInto prog M.empty
+     {-
+     evalInto Direct prog M.empty
        (M.fromList [("x",x),("y",y)])
        (App "target3" [Var "x",Var "y"])
        (cons true [])
+     -}
 
      let loop =
            do s <- objectView x

@@ -467,6 +467,14 @@ withNewContext l (M h) = M (\env -> h env{ context = l })
 liftIO :: IO a -> M a
 liftIO io = withSolver $ \_ -> io
 
+choice :: [M ()] -> M ()
+choice []  = addClauseHere []
+choice [h] = h
+choice hs  =
+  do ls <- withSolver $ \s -> sequence [ newLit s | h <- hs ]
+     addClauseHere ls
+     sequence_ [ withNewContext l h | (l,h) <- ls `zip` hs ]
+
 addClauseHere :: [Lit] -> M ()
 addClauseHere xs =
   do ctx <- here

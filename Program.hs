@@ -23,93 +23,114 @@ type Program = Map Name ([Name],Expr)
 
 --------------------------------------------------------------------------------------------
 
-eval :: Program -> Map Name (Object,[Object],Object) -> Map Name Object -> Expr -> M Object
-eval prog apps env (Var x) =
+data Mode = Direct | Prolog deriving ( Eq, Ord, Show )
+
+--------------------------------------------------------------------------------------------
+
+eval :: Mode -> Program -> Map Name (Object,[Object],Object) -> Map Name Object -> Expr -> M Object
+eval mode prog apps env (Var x) =
   do return (fromJust (M.lookup x env))
 
-eval prog apps env (Con c as) =
-  do ys <- sequence [ eval prog apps env a | a <- as ]
+eval mode prog apps env (Con c as) =
+  do ys <- sequence [ eval mode prog apps env a | a <- as ]
      return (cons c ys)
      
-eval prog apps env (App f as) =
+eval mode prog apps env (App f as) =
   case (M.lookup f apps, M.lookup f prog) of
     (Just (trig,ys,z), _) ->
       do isCons trig true $ \_ ->
-           sequence_ [ evalInto prog apps env a y | (a,y) <- zipp ("App/LetApp:" ++ show f) as ys ]
+           sequence_ [ evalInto mode prog apps env a y | (a,y) <- zipp ("App/LetApp:" ++ show f) as ys ]
          return z
 
     (_, Just (xs,rhs)) ->
-      do --liftIO $ putStrLn (show f ++ show as)
-         ys <- sequence [ eval prog apps env a | a <- as ]
-         eval prog M.empty (M.fromList (zipp ("App:" ++ show f) xs ys)) rhs
+      --case mode of
+      --  Direct ->
+          do ys <- sequence [ eval mode prog apps env a | a <- as ]
+             eval mode prog M.empty (M.fromList (zipp ("App:" ++ show f) xs ys)) rhs
 
-eval prog apps env (Later a) =
+      --  Prolog ->
+      --    do res <- new
+      --       evalInto mode prog apps env (App f as) res
+      --       return res
+
+eval mode prog apps env (Later a) =
   do y <- new
-     evalInto prog apps env (Later a) y
+     evalInto mode prog apps env (Later a) y
      return y
 
-eval prog apps env (Let x a b) =
-  do y <- eval prog apps env a
-     eval prog apps (M.insert x y env) b
+eval mode prog apps env (Let x a b) =
+  do y <- eval mode prog apps env a
+     eval mode prog apps (M.insert x y env) b
 
-eval prog apps env (LetApp f xs a b) =
+eval mode prog apps env (LetApp f xs a b) =
   do trig <- new
      ys   <- sequence [ new | x <- xs ]
      z    <- new
      ifCons trig true $ \_ ->
-       evalInto prog apps (inserts (zipp ("LetApp:" ++ show f) xs ys) env) a z
-     eval prog (M.insert f (trig,ys,z) apps) env b
+       evalInto mode prog apps (inserts (zipp ("LetApp:" ++ show f) xs ys) env) a z
+     eval mode prog (M.insert f (trig,ys,z) apps) env b
 
-eval prog apps env (Case a alts) =
+eval mode prog apps env (Case a alts) =
   do res <- new
-     evalInto prog apps env (Case a alts) res
+     evalInto mode prog apps env (Case a alts) res
      return res
 
 --------------------------------------------------------------------------------------------
 
-evalInto :: Program -> Map Name (Object,[Object],Object) -> Map Name Object -> Expr -> Object -> M ()
-evalInto prog apps env (Var x) res =
+evalInto :: Mode -> Program -> Map Name (Object,[Object],Object) -> Map Name Object -> Expr -> Object -> M ()
+evalInto mode prog apps env (Var x) res =
   do fromJust (M.lookup x env) >>> res
 
-evalInto prog apps env (Con c as) res =
+evalInto mode prog apps env (Con c as) res =
   do isCons res c $ \ys ->
-       sequence_ [ evalInto prog apps env a y | (a,y) <- zipp ("Con:" ++ show c ++ "->") as ys ]
+       sequence_ [ evalInto mode prog apps env a y | (a,y) <- zipp ("Con:" ++ show c ++ "->") as ys ]
 
-evalInto prog apps env (App f as) res =
+evalInto mode prog apps env (App f as) res =
   case (M.lookup f apps, M.lookup f prog) of
     (Just (trig,ys,z), _) ->
       do isCons trig true $ \_ ->
-           sequence_ [ evalInto prog apps env a y | (a,y) <- zipp ("App/LetApp:" ++ show f ++ "->") as ys ]
+           sequence_ [ evalInto mode prog apps env a y | (a,y) <- zipp ("App/LetApp:" ++ show f ++ "->") as ys ]
          z >>> res
 
     (_, Just (xs,rhs)) ->
-      do --liftIO $ putStrLn (show f ++ show as)
-         ys <- sequence [ eval prog apps env a | a <- as ]
-         evalInto prog M.empty (M.fromList (zipp ("App:" ++ show f ++ "->") xs ys)) rhs res
+      --(case mode of
+      --  Direct -> id
+      --  Prolog -> later) $
+      do ys <- sequence [ eval mode prog apps env a | a <- as ]
+         evalInto mode prog M.empty (M.fromList (zipp ("App:" ++ show f ++ "->") xs ys)) rhs res
 
-evalInto prog apps env (Later a) res =
-  do later (evalInto prog apps env (Later a) res)
+evalInto mode prog apps env (Later a) res =
+  do later (evalInto mode prog apps env a res)
 
-evalInto prog apps env (Let x a b) res =
-  do y <- eval prog apps env a
-     evalInto prog apps (M.insert x y env) b res
+evalInto mode prog apps env (Let x a b) res =
+  do y <- eval mode prog apps env a
+     evalInto mode prog apps (M.insert x y env) b res
 
-evalInto prog apps env (LetApp f xs a b) res =
+evalInto mode prog apps env (LetApp f xs a b) res =
   do trig <- new
      ys   <- sequence [ new | x <- xs ]
      z    <- new
      ifCons trig true $ \_ ->
-       evalInto prog apps (inserts (zipp ("LetApp:" ++ show f ++ "->") xs ys) env) a z
-     evalInto prog (M.insert f (trig,ys,z) apps) env b res
+       evalInto mode prog apps (inserts (zipp ("LetApp:" ++ show f ++ "->") xs ys) env) a z
+     evalInto mode prog (M.insert f (trig,ys,z) apps) env b res
 
-evalInto prog apps env (Case a alts) res =
-  do y <- eval prog apps env a
-     sequence_
-       [ ifCons y c $ \ys ->
-           evalInto prog apps (inserts (zipp ("Case:" ++ show c) xs ys) env) rhs res
-       | (c,xs,rhs) <- alts
-       ]
-  
+evalInto mode prog apps env (Case a alts) res =
+  do y <- eval mode prog apps env a
+     case mode of
+       Direct ->
+         sequence_
+           [ ifCons y c $ \ys ->
+                 evalInto mode prog apps (inserts (zipp ("Case:" ++ show c) xs ys) env) rhs res
+           | (c,xs,rhs) <- alts
+           ]
+
+       Prolog ->
+         choice
+           [ isCons y c $ \ys ->
+                 evalInto mode prog apps (inserts (zipp ("Case:" ++ show c) xs ys) env) rhs res
+           | (c,xs,rhs) <- alts
+           ]
+
 --------------------------------------------------------------------------------------------
 
 zipp :: String -> [a] -> [b] -> [(a,b)]
